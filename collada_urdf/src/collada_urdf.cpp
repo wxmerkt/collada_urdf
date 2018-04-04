@@ -1285,6 +1285,7 @@ protected:
         case urdf::Geometry::MESH: {
             urdf::Mesh* urdf_mesh = (urdf::Mesh*) geometry.get();
             cgeometry->setName(urdf_mesh->filename.c_str());
+            std::cout << "about to write some serious geometry: " << urdf_mesh->filename << std::endl;
             _loadMesh(urdf_mesh->filename, cgeometry, urdf_mesh->scale, org_trans);
             break;
         }
@@ -1318,6 +1319,7 @@ protected:
 
     void _WriteMaterial(const string& geometry_id, urdf::MaterialSharedPtr material)
     {
+        std::cout << "Writing material for " << geometry_id << std::endl;
         string effid = geometry_id+string("_eff");
         string matid = geometry_id+string("_mat");
         domMaterialRef pdommat = daeSafeCast<domMaterial>(_materialsLib->add(COLLADA_ELEMENT_MATERIAL));
@@ -1330,10 +1332,13 @@ protected:
         diffuse.init("1 1 1 0");
 
         if( !!material ) {
+            std::cout << "Yep, this is a real material: rgba(" << material->color.r << "," << material->color.g << "," <<material->color.b<< "," <<material->color.a <<")" << std::endl;
             ambient.r = diffuse.r = material->color.r;
             ambient.g = diffuse.g = material->color.g;
             ambient.b = diffuse.b = material->color.b;
             ambient.a = diffuse.a = material->color.a;
+        } else{
+            std::cout << "NO THIS ISNT A MATERIAL WTF" << std::endl;
         }
 
         domEffectRef effect = _WriteEffect(geometry_id, ambient, diffuse);
@@ -1503,6 +1508,7 @@ protected:
             ROS_WARN_STREAM(str(boost::format("No meshes found in file %s")%filename));
             return;
         }
+        if (!scene->HasMaterials()) ROS_WARN_STREAM("Does not contain materials");
         domMeshRef pdommesh = daeSafeCast<domMesh>(pdomgeom->add(COLLADA_ELEMENT_MESH));
         domSourceRef pvertsource = daeSafeCast<domSource>(pdommesh->add(COLLADA_ELEMENT_SOURCE));
         domAccessorRef pacc;
@@ -1542,6 +1548,11 @@ protected:
         if( !node ) {
             return;
         }
+        std::cout << "_buildAiMesh for Node: " << geomid << " with meshes: " << node->mNumMeshes << std::endl;
+
+        std::cout << "Scene Num Materials:" << scene->mNumMaterials << std::endl;
+        std::cout << "Scene Num Textures:" << scene->mNumTextures << std::endl;
+
         aiMatrix4x4 transform = node->mTransformation;
         aiNode *pnode = node->mParent;
         while (pnode) {
@@ -1556,7 +1567,7 @@ protected:
         {
             uint32_t vertexOffset = parray->getCount();
             uint32_t nTotalVertices=0;
-            for (uint32_t i = 0; i < node->mNumMeshes; i++) {
+            for (uint32_t i = 0; i < node->mNumMeshes; i++) { // qqq
                 aiMesh* input_mesh = scene->mMeshes[node->mMeshes[i]];
                 nTotalVertices += input_mesh->mNumVertices;
             }
@@ -1591,8 +1602,37 @@ protected:
 
             vector<int> triangleindices, otherindices;
             int nNumOtherPrimitives = 0;
+            std::cout << "Node has number of meshes: " << node->mNumMeshes << std::endl;
             for (uint32_t i = 0; i < node->mNumMeshes; i++) {
                 aiMesh* input_mesh = scene->mMeshes[node->mMeshes[i]];
+                aiMaterial* input_material = scene->mMaterials[node->mMeshes[i]];
+                if (!! input_material) {
+                    // std::cout << "Material has number of properties: " << input_material->mNumProperties << std::endl;
+                    for (int pi = 0, numProp = input_material->mNumProperties; pi < numProp; ++pi )
+                    {
+                        aiMaterialProperty* pProp = input_material->mProperties[pi];
+                        printf("input_material[%s] Properties[%d][%s]\n", geomid.c_str(), pi, pProp->mKey.C_Str());
+                    }
+                    aiColor4D ambient;
+                    input_material->Get(AI_MATKEY_COLOR_AMBIENT, ambient);
+                    std::cout << "ambient=" << ambient.r << "," << ambient.g << "," << ambient.b << "," << ambient.a << std::endl;
+                    aiColor4D diffuse;
+                    input_material->Get(AI_MATKEY_COLOR_DIFFUSE, diffuse);
+                    std::cout << "diffuse=" << diffuse.r << "," << diffuse.g << "," << diffuse.b << "," << diffuse.a << std::endl;
+                    aiColor4D specular;
+                    input_material->Get(AI_MATKEY_COLOR_SPECULAR, specular);
+                    std::cout << "specular=" << specular.r << "," << specular.g << "," << specular.b << "," << specular.a << std::endl;
+                    // uint8 NumOfTexture = input_material->GetTextureCount(aiTextureType_DIFFUSE);
+                    // for (int ti = 0; ti < NumOfTexture; ++ti)
+                    // {
+                    //     input_material->GetTexture(aiTextureType_DIFFUSE,
+                    //                                             ti,
+                    //                                             &path);
+                    // }
+
+                } else {
+                    std::cout << "NOT A POINTER!!" << std::endl;
+                }
                 uint32_t indexCount = 0, otherIndexCount = 0;
                 for (uint32_t j = 0; j < input_mesh->mNumFaces; j++) {
                     aiFace& face = input_mesh->mFaces[j];
@@ -1625,7 +1665,7 @@ protected:
             if( triangleindices.size() > 0 ) {
                 domTrianglesRef ptris = daeSafeCast<domTriangles>(pdommesh->add(COLLADA_ELEMENT_TRIANGLES));
                 ptris->setCount(triangleindices.size()/3);
-                ptris->setMaterial("mat0");
+                ptris->setMaterial("mat0");  // this line annoys wolf
                 domInput_local_offsetRef pvertoffset = daeSafeCast<domInput_local_offset>(ptris->add(COLLADA_ELEMENT_INPUT));
                 pvertoffset->setSemantic("VERTEX");
                 pvertoffset->setOffset(0);
